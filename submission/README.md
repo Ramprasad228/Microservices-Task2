@@ -52,6 +52,9 @@ minikube image build -t gateway-service:1.0.0 .\Microservices\gateway-service
 minikube image ls
 ```
 
+<img width="1906" height="593" alt="image" src="https://github.com/user-attachments/assets/ef131ae0-0121-41fe-908d-5636fc756066" />
+
+
 The Dockerfiles use Node.js 20 Alpine, install production dependencies, and run as the unprivileged `node` user.
 
 ## Deploy with kubectl
