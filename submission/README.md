@@ -1,31 +1,48 @@
-# Microservices on Minikube
+# Microservices Deployment on Minikube
 
-This package deploys four Node.js services into a Minikube cluster. The services use ClusterIP for in-cluster discovery; the gateway calls the other services by Kubernetes DNS name. Each Deployment defines resource requests and limits plus HTTP liveness and readiness probes against `/health`.
+This guide covers building and deploying the User, Product, Order, and Gateway Node.js services on Kubernetes with Minikube. The four application Services are `ClusterIP`; the gateway discovers its backends through Kubernetes DNS. Each Deployment has resource requests and limits and liveness/readiness probes at `/health`.
 
 ## Prerequisites
 
-- Windows 10/11 with Docker Desktop running, or another supported Minikube driver.
-- Minikube and kubectl installed and available in PowerShell.
-- This `submission` directory extracted into the project root, next to the `Microservices` directory. The Dockerfiles are in each service's source directory.
+- Windows 10/11 with Docker Desktop installed and using the Linux container engine.
+- PowerShell, `kubectl`, and Minikube.
+- Run commands from the repository root, containing both `Microservices` and `submission`.
 
-Confirm the tools are available:
+Check installed tools and the Docker daemon:
 
 ```powershell
 minikube version
 kubectl version --client
-docker version
+docker info
 ```
 
-## Start Minikube and Build Images
+If Minikube is not installed, install it with Winget from a PowerShell terminal:
 
-Start a cluster with Docker Desktop as its driver:
+```powershell
+winget install --id Kubernetes.minikube --exact --accept-package-agreements --accept-source-agreements
+```
+
+Open a new terminal after installation so PATH is refreshed. Start Docker Desktop if needed:
+
+```powershell
+docker desktop start
+```
+
+## Start the Cluster
+
+Use Docker Desktop as the Minikube driver, then confirm the node is Ready:
 
 ```powershell
 minikube start --driver=docker
 kubectl get nodes
+kubectl config current-context
 ```
 
-Build directly into Minikube's image store. This matches the manifest's `imagePullPolicy: Never`, so Kubernetes won't try to pull these local images from a registry:
+The current context should be `minikube`. On the authoring machine the Winget install did not refresh the existing Bash session's PATH; the installed executable was at `C:\Program Files\Kubernetes\Minikube\minikube.exe`. A new PowerShell window normally resolves `minikube` without needing the full path.
+
+## Build the Service Images
+
+Build each Dockerfile into Minikube's image store. Image tags match the Deployments, which use `imagePullPolicy: Never`:
 
 ```powershell
 minikube image build -t user-service:1.0.0 .\Microservices\user-service
@@ -35,60 +52,100 @@ minikube image build -t gateway-service:1.0.0 .\Microservices\gateway-service
 minikube image ls
 ```
 
-## Deploy
+The Dockerfiles use Node.js 20 Alpine, install production dependencies, and run as the unprivileged `node` user.
 
-Run these commands from the project root (the directory containing `submission` and `Microservices`). Apply Services first so DNS names are registered, then Deployments:
+## Deploy with kubectl
+
+Apply the ClusterIP Services first, followed by the Deployments:
 
 ```powershell
 kubectl apply -f .\submission\services\
 kubectl apply -f .\submission\deployments\
+```
+
+Wait for each rollout and inspect the pods and service endpoints:
+
+```powershell
 kubectl rollout status deployment/user-service
 kubectl rollout status deployment/product-service
 kubectl rollout status deployment/order-service
 kubectl rollout status deployment/gateway-service
 kubectl get pods -o wide
 kubectl get services
+kubectl get endpoints
 ```
 
-All four pods should show `1/1` Ready. The Service names (`user-service`, `product-service`, `order-service`, and `gateway-service`) are the stable in-cluster DNS names used for service discovery.
+All four pods should be `1/1 Running`; each service should have a pod endpoint on its configured port. Kubernetes DNS names are `user-service:3000`, `product-service:3001`, `order-service:3002`, and `gateway-service:3003`.
 
-## Test the Services
+## Test Through Port-Forwarding
 
-Forward the gateway Service to the local machine. Keep this command running in its own PowerShell window:
+Start a port-forward in one PowerShell window and leave it running:
 
 ```powershell
 kubectl port-forward service/gateway-service 3003:3003
 ```
 
-In a second window, test gateway proxy routes and order creation:
+In a second window, request the gateway health endpoint and each proxied route:
 
 ```powershell
-curl.exe http://localhost:3003/health
-curl.exe http://localhost:3003/api/users
-curl.exe http://localhost:3003/api/products
-curl.exe http://localhost:3003/api/orders
-curl.exe -X POST http://localhost:3003/api/orders -H "Content-Type: application/json" -d '{"userId":1,"productId":1}'
+curl.exe -fsS http://127.0.0.1:3003/health
+curl.exe -fsS http://127.0.0.1:3003/api/users
+curl.exe -fsS http://127.0.0.1:3003/api/products
+curl.exe -fsS http://127.0.0.1:3003/api/orders
 ```
 
-To test cluster DNS and direct service access without port-forwarding, run a temporary curl pod:
+Expected responses include healthy status JSON, two users, two products, and the in-memory orders list. To create an order through the gateway:
+
+```powershell
+curl.exe -fsS -X POST http://127.0.0.1:3003/api/orders -H "Content-Type: application/json" -d '{"userId":1,"productId":1}'
+curl.exe -fsS http://127.0.0.1:3003/api/orders
+```
+
+The order service stores orders in memory, so created orders are lost if its pod restarts.
+
+## Test Service DNS Directly
+
+From a temporary pod inside the cluster, call services by their Kubernetes DNS names:
 
 ```powershell
 kubectl run curl-test --rm -i --restart=Never --image=curlimages/curl:8.10.1 --command -- curl -fsS http://user-service:3000/users
 kubectl run curl-test --rm -i --restart=Never --image=curlimages/curl:8.10.1 --command -- curl -fsS http://product-service:3001/products
-kubectl run curl-test --rm -i --restart=Never --image=curlimages/curl:8.10.1 --command -- curl -fsS http://gateway-service:3003/api/orders
+kubectl run curl-test --rm -i --restart=Never --image=curlimages/curl:8.10.1 --command -- curl -fsS http://order-service:3002/orders
 ```
 
-The direct-access commands create a short-lived diagnostic pod and may need internet access to pull the curl image. Gateway access exercises inter-service communication. To capture its successful proxy calls, make requests and inspect the gateway logs:
+The first use may pull the curl image and therefore requires registry access. The gateway route tests also validate its DNS-based communication with the three backend services.
+
+## Logs and Evidence
+
+After making gateway requests, inspect the proxy log entries:
 
 ```powershell
-kubectl logs deployment/gateway-service
+kubectl logs deployment/gateway-service --tail=20
 ```
 
-Expected log lines include `GET /api/users -> http://user-service:3000` and equivalent product/order routes.
+Recreate the evidence PNGs from current command output while the port-forward is active:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\submission\capture-evidence.ps1
+```
+
+The script runs `kubectl get pods -o wide`, makes live curl requests through `127.0.0.1:3003`, reads gateway logs, and writes the resulting evidence images into `submission/screenshots/`.
+
+**Running Pods**
+
+![kubectl get pods output showing all four services Ready](screenshots/pods.png)
+
+**Gateway Communication Logs**
+
+![Gateway logs showing service-to-service proxy requests](screenshots/logs.png)
+
+**Port-Forwarded Tests**
+
+![Health, users, products, and orders responses through the gateway port-forward](screenshots/service-test.png)
 
 ## Optional Ingress
 
-Enable Minikube's NGINX Ingress controller and apply the optional manifest:
+Enable the Minikube NGINX Ingress addon and apply the optional manifest:
 
 ```powershell
 minikube addons enable ingress
@@ -97,35 +154,29 @@ kubectl get ingress
 minikube ip
 ```
 
-Add `microservices.local` and the displayed Minikube IP to the Windows hosts file at `%SystemRoot%\System32\drivers\etc\hosts` (editing it requires Administrator permissions). Then test:
+Add the returned IP and `microservices.local` to `%SystemRoot%\System32\drivers\etc\hosts` (requires Administrator permissions), then test:
 
 ```powershell
-curl.exe http://microservices.local/api/users
-curl.exe http://microservices.local/api/products
-curl.exe http://microservices.local/api/orders
+curl.exe -fsS http://microservices.local/api/users
+curl.exe -fsS http://microservices.local/api/products
+curl.exe -fsS http://microservices.local/api/orders
 ```
 
-Ingress is optional; port-forwarding works without it.
-
-## Screenshots
-
-Save genuine terminal screenshots in `submission/screenshots/` before submitting:
-
-- `pods.png`: `kubectl get pods -o wide` with all four pods Ready.
-- `logs.png`: gateway logs after requests to the users, products, and orders routes.
-- `service-test.png`: port-forwarded curl commands and their successful responses.
-
-The screenshots are not pre-populated because no Minikube or kubectl executable is available in the authoring environment; no cluster output has been fabricated.
+Ingress is optional; the ClusterIP services and port-forward tests work without it.
 
 ## Troubleshooting
 
-- `ErrImageNeverPull` or `ImagePullBackOff`: confirm the four `minikube image build` commands completed and that each image appears in `minikube image ls`. Build with the exact image tag used in the Deployment manifest.
-- A pod is not Ready: inspect `kubectl describe pod <pod-name>` and `kubectl logs deployment/<service-name>`. Verify that the service listens on its declared port and serves `/health`.
-- Gateway returns HTTP 500: check `kubectl get endpoints`, confirm the backend Services select Ready pods, and inspect `kubectl logs deployment/gateway-service`. The gateway URL environment variables should point to the matching Service name and port.
-- Port-forward fails: check `kubectl get pods` and `kubectl get services`, then retry `kubectl port-forward service/gateway-service 3003:3003`.
-- Ingress returns 404 or cannot resolve: confirm the ingress addon is enabled, `kubectl get ingress` shows the host rule, and the Minikube IP/hostname entry is correct.
+- `minikube` is not recognized: open a new PowerShell after Winget installation. If needed, invoke `C:\Program Files\Kubernetes\Minikube\minikube.exe` directly.
+- Minikube cannot connect to Docker: start Docker Desktop and verify `docker info` shows a Server section before running `minikube start --driver=docker`.
+- `ErrImageNeverPull` or `ImagePullBackOff`: rebuild the image with the exact tag in the Deployment and confirm it appears in `minikube image ls`.
+- A pod is Pending or not Ready: inspect `kubectl describe pod <pod-name>` and `kubectl logs deployment/<service-name>`. Confirm its `/health` endpoint and container port.
+- Gateway returns HTTP 500: inspect `kubectl get endpoints` and `kubectl logs deployment/gateway-service`; verify backend Services have endpoints and gateway URL environment variables use matching service names and ports.
+- Port-forward fails or curl cannot connect: verify the gateway pod is Ready and Service exists, then restart `kubectl port-forward service/gateway-service 3003:3003`. Port 3003 must be free on the local machine.
+- Ingress returns 404 or cannot resolve: check the addon, `kubectl get ingress`, the Minikube IP, and the Windows hosts-file entry.
 
-## Remove Resources
+## Cleanup
+
+Remove the optional Ingress if it was installed, then delete Deployments and Services:
 
 ```powershell
 kubectl delete -f .\submission\ingress\ingress.yaml

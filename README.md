@@ -2,4 +2,18 @@
 
 This repository contains the User, Product, Order, and Gateway Node.js services, Dockerfiles for building their local images, and Kubernetes deployment artifacts.
 
-The submission package and complete Minikube setup, deployment, testing, Ingress, and troubleshooting instructions are in [submission/README.md](submission/README.md).
+The [step-by-step Minikube deployment guide](submission/README.md) includes setup, image builds, `kubectl apply`, service and gateway tests, troubleshooting, and the captured evidence screenshots in `submission/screenshots/`.
+
+## Deployment Evidence
+
+**Running Pods**
+
+![kubectl get pods output showing all four services Ready](submission/screenshots/pods.png)
+
+**Service Communication Logs**
+
+![Gateway logs showing requests routed to the user, product, and order services](submission/screenshots/logs.png)
+
+**Port-Forwarded Tests**
+
+![Gateway health and API responses tested through port-forwarding](submission/screenshots/service-test.png)
