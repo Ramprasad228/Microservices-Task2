@@ -50,10 +50,9 @@ minikube image build -t product-service:1.0.0 .\Microservices\product-service
 minikube image build -t order-service:1.0.0 .\Microservices\order-service
 minikube image build -t gateway-service:1.0.0 .\Microservices\gateway-service
 minikube image ls
+```
 
 <img width="1552" height="511" alt="image" src="https://github.com/user-attachments/assets/ca4b06af-5d47-427a-99d2-c30e86ad4e28" />
-
-```
 
 <img width="1906" height="593" alt="image" src="https://github.com/user-attachments/assets/ef131ae0-0121-41fe-908d-5636fc756066" />
 
