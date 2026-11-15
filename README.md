@@ -17,3 +17,7 @@ The [step-by-step Minikube deployment guide](submission/README.md) includes setu
 **Port-Forwarded Tests**
 
 ![Gateway health and API responses tested through port-forwarding](submission/screenshots/service-test.png)
+
+**Ingress Routing**
+
+![Ingress routes for users, products, orders, and health returning HTTP 200](submission/screenshots/ingress-test.png)

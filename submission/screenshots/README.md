@@ -1,1 +1,1 @@
-The PNG evidence images are generated from live `kubectl` and `curl.exe` command output by `submission/capture-evidence.ps1`. See `submission/README.md` for deployment steps and evidence details.
+The PNG evidence images are generated from live `kubectl` and `curl.exe` output by `submission/capture-evidence.ps1`. After enabling Ingress and forwarding its controller to port 8080, generate `ingress-test.png` with `submission/capture-ingress-evidence.ps1`. See `submission/README.md` for steps and evidence details.

@@ -145,22 +145,49 @@ The script runs `kubectl get pods -o wide`, makes live curl requests through `12
 
 ## Optional Ingress
 
-Enable the Minikube NGINX Ingress addon and apply the optional manifest:
+The NGINX Ingress addon and `microservices-ingress` resource are enabled in the current Minikube cluster. The rule sends `/api` and `/health` for host `microservices.local` to `gateway-service:3003`.
+
+To enable the addon on a fresh cluster and apply the optional manifest:
 
 ```powershell
 minikube addons enable ingress
 kubectl apply -f .\submission\ingress\ingress.yaml
 kubectl get ingress
-minikube ip
 ```
 
-Add the returned IP and `microservices.local` to `%SystemRoot%\System32\drivers\etc\hosts` (requires Administrator permissions), then test:
+Wait for the controller to be Ready:
 
 ```powershell
-curl.exe -fsS http://microservices.local/api/users
-curl.exe -fsS http://microservices.local/api/products
-curl.exe -fsS http://microservices.local/api/orders
+kubectl get pods -n ingress-nginx
+kubectl get ingress microservices-ingress -o wide
 ```
+
+On Docker Desktop for Windows, test host-based routing without editing the hosts file by forwarding a local port to the controller. Leave this command running in a terminal:
+
+```powershell
+kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80
+```
+
+From a second terminal, set the Ingress host header on each request:
+
+```powershell
+curl.exe -i -H "Host: microservices.local" http://127.0.0.1:8080/api/users
+curl.exe -i -H "Host: microservices.local" http://127.0.0.1:8080/api/products
+curl.exe -i -H "Host: microservices.local" http://127.0.0.1:8080/api/orders
+curl.exe -i -H "Host: microservices.local" http://127.0.0.1:8080/health
+```
+
+Each request should return HTTP 200. Alternatively, use `minikube tunnel` or the Minikube IP and add `microservices.local` to `%SystemRoot%\System32\drivers\etc\hosts` (editing the hosts file may require Administrator permissions).
+
+An Ingress-specific capture is also available when port 8080 is forwarded:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\submission\capture-ingress-evidence.ps1
+```
+
+**Ingress Route Test**
+
+![All four microservices.local Ingress routes returning HTTP 200](screenshots/ingress-test.png)
 
 Ingress is optional; the ClusterIP services and port-forward tests work without it.
 
